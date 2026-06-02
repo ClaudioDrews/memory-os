@@ -137,6 +137,47 @@ def estimate_tokens(text: str) -> int:
     return int(len(text.split()) * 1.3)
 
 
+# ─── Prompt Injection Sanitization ──────────────────────────────────────────
+
+_INJECTION_PATTERNS_CE = [
+    # "ignore all previous/prior instructions/directives"
+    (re.compile(r"(?i)\bignore\s+all\s+(previous|prior)\s+(instructions|directives|commands|messages|prompts|context)"),
+     "[REDACTED]"),
+    # "you are/will now become/act/acting as (a/an) AI/assistant..."
+    (re.compile(r"(?i)\byou\s+(are|will\s+now)\s+(now\s+)?(become|act|acting)\s+as\s+(a\s+|an\s+)?(AI\s+assistant|assistant|AI|agent|LLM|chatbot|model|system)"),
+     "[REDACTED]"),
+    # "new instructions/directives/commands follow/above/below"
+    (re.compile(r"(?i)\bnew\s+(instructions|directives|commands)\s+(follow|above|below)"),
+     "[REDACTED]"),
+    # Template injection: {{...}}, ${...}
+    (re.compile(r"\{\{.*?\}\}|\$\{.*?\}"), "[REDACTED]"),
+    # Markdown/javascript data: URLs in links and images
+    (re.compile(r"(?i)(javascript|data)\s*:"), "sanitized:"),
+    # Known system prefixes
+    (re.compile(r"(?i)\[IMPORTANT:.*?\]|\[SYSTEM:.*?\]"), ""),
+    # Control characters (keep newlines and tabs)
+    (re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"), ""),
+]
+
+
+def _strip_prompt_injection(text: str) -> str:
+    """Strip known prompt-injection patterns from retrieved text.
+    Fail-open: never raises. Empty/null input returns empty string.
+    """
+    if not text:
+        return ""
+    try:
+        result = str(text)
+        for pattern, replacement in _INJECTION_PATTERNS_CE:
+            result = pattern.sub(replacement, result)
+        # Normalize excessive whitespace (4+ newlines → 3, 8+ spaces → 1)
+        result = re.sub(r"\n{4,}", "\n\n\n", result)
+        result = re.sub(r" {8,}", " ", result)
+        return result.strip()
+    except Exception:
+        return str(text)[:400]
+
+
 # ─── Core ───────────────────────────────────────────────────────────────────
 
 def embed_query(text: str) -> Optional[List[float]]:
@@ -248,7 +289,7 @@ def search_knowledge_base(
                 "id": r.get("id", "unknown"),
                 "score": score,
                 "title": payload.get("title", "Untitled"),
-                "content_preview": (payload.get("text", "") or "")[:400],
+                "content_preview": _strip_prompt_injection((payload.get("text", "") or "")[:400]),
                 "source": payload.get("source", "unknown"),
                 "tags": payload.get("tags", [])
             })
@@ -326,7 +367,7 @@ def lexical_search_in_vault(
             "id": f"lexical-{hashlib.md5(item['filepath'].encode()).hexdigest()[:16]}",
             "score": round(min(1.0, item["density"]), 2),
             "title": item["title"],
-            "content_preview": item["text"][:400],
+            "content_preview": _strip_prompt_injection(item["text"][:400]),
             "source": f"vault-{item['filepath'].replace(vault_root, '').lstrip('/')[:40]}",
             "tags": ["fallback", "lexical"],
             "fallback_level": "lexical",
@@ -374,7 +415,7 @@ def sqlite_keyword_search(
                     "id": f"sqlite-{row['lineage_id'][:16]}",
                     "score": 0.5,
                     "title": f"Lineage {row['lineage_id'][:8]}...",
-                    "content_preview": (row["query"] or "")[:400],
+                    "content_preview": _strip_prompt_injection((row["query"] or "")[:400]),
                     "source": f"sqlite-history-{row['session_id']}",
                     "tags": ["fallback", "sqlite"],
                     "fallback_level": "sqlite",
@@ -459,7 +500,7 @@ def search_with_fallback(
                 "id": r.get("id", "unknown"),
                 "score": score,
                 "title": payload.get("title", "Untitled"),
-                "content_preview": (payload.get("text", "") or "")[:400],
+                "content_preview": _strip_prompt_injection((payload.get("text", "") or "")[:400]),
                 "source": payload.get("source", "unknown"),
                 "tags": payload.get("tags", [])
             })
@@ -504,7 +545,7 @@ def search_with_fallback(
                         "id": r.get("id", "unknown"),
                         "score": score,
                         "title": payload.get("title", "Untitled"),
-                        "content_preview": (payload.get("text", "") or "")[:400],
+                        "content_preview": _strip_prompt_injection((payload.get("text", "") or "")[:400]),
                         "source": payload.get("source", "unknown"),
                         "tags": payload.get("tags", [])
                     })
