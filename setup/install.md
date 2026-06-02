@@ -7,7 +7,7 @@
 - Hermes Agent 0.14.0+ (tested on 0.15.2)
 - Python 3.11+
 - Docker 24.0+
-- OpenRouter API key (or configured embedding backend — see [Layer 5: Qdrant](../layers/05-qdrant.md))
+- OpenRouter API key **only if using OpenRouter as embedding backend** (Ollama/vLLM/llama.cpp local providers do not require a key — see [Layer 5: Qdrant](../layers/05-qdrant.md))
 - 16 GB RAM recommended (8 GB minimum)
 
 ## Installation
@@ -51,6 +51,7 @@ cd ~/memory-os
 
 # Create .env with required variables
 cat > .env << EOF
+# Required only for OpenRouter embedding backend; safe to leave empty for local providers
 OPENROUTER_API_KEY=sk-or-...
 REDIS_PASSWORD=$(openssl rand -hex 16)
 EMBEDDING_DIMS=4096
@@ -73,6 +74,8 @@ Add to your Hermes profile `.env` (e.g. `~/.hermes/.env`):
 ```bash
 # Required
 FABRIC_DIR=/home/your-user/vault/fabric
+
+# Required only when using OpenRouter as embedding backend
 OPENROUTER_API_KEY=sk-or-...
 
 # Strongly recommended

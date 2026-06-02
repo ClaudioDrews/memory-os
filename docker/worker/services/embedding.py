@@ -25,20 +25,19 @@ async def get_embedding(text: str) -> list[float]:
     Generates embedding via the configured backend.
     Validates that the returned dimensions match EMBEDDING_DIMS.
     """
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    headers = {"Content-Type": "application/json"}
 
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://localhost",
-        "X-Title": "Cognitive-Agent-MaaS",
-    }
+    if "openrouter" in EMBEDDING_API_BASE.lower():
+        if not OPENROUTER_API_KEY:
+            raise RuntimeError("OPENROUTER_API_KEY is required for OpenRouter")
+        headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
+        headers["HTTP-Referer"] = "https://localhost"
+        headers["X-Title"] = "Cognitive-Agent-MaaS"
 
     payload = {
         "model": EMBEDDING_MODEL,
         "input": text,
-        "dimensions": EMBEDDING_DIMS,
+        "dimensions": EMBEDDING_DIMS,  # OpenAI/OpenRouter-specific; ignored by Ollama/vLLM
     }
 
     async with httpx.AsyncClient(timeout=60) as client:
