@@ -4,6 +4,7 @@ Reviews old memories, generates insights, CREATES NEW INDEXABLE POINTS in Qdrant
 """
 import logging
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 

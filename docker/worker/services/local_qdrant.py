@@ -12,7 +12,7 @@ logger = logging.getLogger("cognitive-worker.qdrant")
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "qdrant-maas")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
-EMBEDDING_DIMS = int(os.environ.get("EMBEDDING_DIMS", "4096"))
+QDRANT_API_KEY=os.env...DIMS = int(os.environ.get("EMBEDDING_DIMS", "4096"))
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "knowledge_base")
 
 _client: AsyncQdrantClient | None = None
@@ -22,7 +22,7 @@ def get_qdrant_client() -> AsyncQdrantClient:
     """Returns a singleton of the async Qdrant client."""
     global _client
     if _client is None:
-        _client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        _client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, api_key=QDRANT_API_KEY, https=False)
         logger.info(f"Connected to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
     return _client
 
