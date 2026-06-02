@@ -167,22 +167,21 @@ def embed_query(text: str) -> Optional[List[float]]:
 def embed_query_sparse(text: str) -> Optional[Tuple[List[int], List[float]]]:
     """
     Generate sparse BM25 embedding via FastEmbed (subprocess in ai-lab venv).
+    Query text passes via stdin — never embedded in a -c code string.
     Fail-open: if it fails, return None. Caller falls back to dense-only.
     """
     try:
-        # Shell-quote the text to prevent injection in Python -c
-        import shlex
-        safe_text = shlex.quote(text)
         result = subprocess.run(
-            [_FASTEMBED_PYTHON, "-c", f"""\
-import os, sys
+            [_FASTEMBED_PYTHON, "-c", """\
+import os, sys, json
 sys.path.insert(0, os.environ["FASTEMBED_SITEPKGS"])
 from fastembed.sparse import SparseTextEmbedding
-import json
-model = SparseTextEmbedding(model_name=\\"{BM25_MODEL}\\")
-sparse = list(model.embed({safe_text}))[0]
-print(json.dumps({{\\"indices\\": sparse.indices.tolist(), \\"values\\": sparse.values.tolist()}}))
+query = sys.stdin.read()
+model = SparseTextEmbedding(model_name="Qdrant/bm25")
+sparse = list(model.embed([query]))[0]
+print(json.dumps({"indices": sparse.indices.tolist(), "values": sparse.values.tolist()}))
 """],
+            input=text,
             capture_output=True, text=True, timeout=15
         )
         data = json.loads(result.stdout.strip())
