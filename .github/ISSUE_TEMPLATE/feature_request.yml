@@ -1,0 +1,35 @@
+name: Feature Request
+description: Propose a new feature or improvement for Memory OS
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve? Why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Be as specific as possible.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you try or think about?
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: How broad is the change?
+      options:
+        - Single file / script
+        - Multiple files / layer
+        - Cross-layer / architectural
+        - New integration or provider
+    validations:
+      required: true

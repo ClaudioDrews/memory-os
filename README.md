@@ -13,6 +13,18 @@ Memory OS turns Hermes Agent into a real long-term collaborator — one that rem
 
 ---
 
+## What's New in v0.2.0
+
+**One-command install.** `curl -sSL https://raw.githubusercontent.com/ClaudioDrews/memory-os/main/setup.sh | bash` sets up the entire stack — Docker services, SQLite databases, Icarus plugin, environment — in one shot. The 10-step manual guide is now a fallback for troubleshooting.
+
+**Community infrastructure.** Issue templates (bug report + feature request), PR checklist, and contributing guide. Project is ready for external contributors — and already has them.
+
+**20+ fixes from systematic audit.** Community-driven review across setup, configuration, performance, and resilience. Highlights: provider-agnostic LLM extraction, O(1) path lookups, FTS5-powered session search, semantic dedup at scale, and idempotent database initialization.
+
+**Installation verified on real hardware.** Smoke tests and ingestion tests ship with the repo. The automated installer has been tested end-to-end — including on modest machines where Docker build times exposed UX gaps that are now handled gracefully.
+
+---
+
 ## The problem every serious Hermes user knows
 
 You spend hours configuring the agent, teaching it your preferences, solving hard problems together — and in the next session it acts like it's meeting you for the first time.
@@ -160,6 +172,6 @@ If you're like me — tired of amnesiac agents — Memory OS was built for you.
 **Want to see the agent remember for real?**  
 Clone it, run it, feel the difference.
 
-→ [Setup guide](setup/install.md) · [Layer deep-dives](layers/) · [Infrastructure docs](infrastructure/architecture.md) · [Operational skills](skills/) · [License](LICENSE)
+→ [Quick install](setup.sh) · [Manual guide](setup/install.md) · [Layer deep-dives](layers/) · [Infrastructure docs](infrastructure/architecture.md) · [Operational skills](skills/) · [License](LICENSE)
 
 MIT License · Built with obsession by someone who runs Hermes every single day.

@@ -1,0 +1,44 @@
+name: Bug Report
+description: Report a bug in Memory OS
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or actions that trigger the bug
+      placeholder: |
+        1. Run `./setup.sh`
+        2. Open Hermes
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Memory OS version
+      description: Commit SHA or tag (e.g. `v0.1.0`, `65029e1`)
+      placeholder: v0.1.0
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, Hermes version, embedding backend
+      placeholder: |
+        - OS: Ubuntu 24.04
+        - Docker: 27.x
+        - Hermes: v0.15.1
+        - Embedding: OpenRouter / Ollama
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Any error messages, stack traces, or log output
+      render: shell

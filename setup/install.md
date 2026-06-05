@@ -1,5 +1,7 @@
 # Setup Guide
 
+> **Prefer automated install?** Run `curl -sSL https://raw.githubusercontent.com/ClaudioDrews/memory-os/main/setup.sh | bash` — one command, 10 phases, fully idempotent. This manual guide is kept for reference and troubleshooting.
+
 > Step-by-step installation of the Memory OS stack. Assumes Hermes Agent is already installed and configured.
 
 ## Prerequisites
