@@ -166,6 +166,23 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Phase 5b: Context Enhancer Symlink
+# ──────────────────────────────────────────────────────────────────────────────
+banner "Phase 5b: Context Enhancer"
+
+CE_SRC="${REPO_DIR}/scripts/context_enhancer.py"
+CE_DEST="${HERMES_HOME}/scripts/context_enhancer.py"
+
+if [ -f "${CE_SRC}" ]; then
+    mkdir -p "${HERMES_HOME}/scripts"
+    ln -sf "${CE_SRC}" "${CE_DEST}"
+    ok "context_enhancer.py symlinked to ${CE_DEST}"
+else
+    fail "${CE_SRC} not found"
+    exit 1
+fi
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Phase 6: Wiki + Vault Structure (BEFORE Docker — prevents root ownership)
 # ──────────────────────────────────────────────────────────────────────────────
 banner "Phase 6: Wiki & Vault"
@@ -299,13 +316,17 @@ banner "Phase 9: Rulebook"
 RULEBOOK="${HERMES_HOME}/rulebook.md"
 
 if [ -f "${RULEBOOK}" ]; then
-    if grep -q "Memory OS amendment" "${RULEBOOK}" 2>/dev/null; then
+    if grep -q "Mandatory Pre-Action Protocol" "${RULEBOOK}" 2>/dev/null; then
         ok "Rulebook amendments already applied"
     else
-        info "Applying Memory OS amendments to rulebook..."
-        info "(See modifications/execution-agent-protocol.md for details)"
-        warn "Amendments NOT applied automatically — edit the rulebook manually"
-        warn "See: ${REPO_DIR}/modifications/execution-agent-protocol.md"
+        PROTOCOL_FILE="${REPO_DIR}/modifications/execution-agent-protocol.md"
+        if [ -f "${PROTOCOL_FILE}" ]; then
+            echo "" >> "${RULEBOOK}"
+            cat "${PROTOCOL_FILE}" >> "${RULEBOOK}"
+            ok "Mandatory Pre-Action Protocol appended to rulebook"
+        else
+            warn "execution-agent-protocol.md not found — skipping"
+        fi
     fi
 else
     warn "${RULEBOOK} not found — skipping modifications"

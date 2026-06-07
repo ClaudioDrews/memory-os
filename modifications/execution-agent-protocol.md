@@ -1,83 +1,29 @@
-# Execution Agent Protocol — Memory OS Amendments
+<!-- Memory OS additions — do not duplicate -->
 
-> Apply these amendments to `~/.hermes/rulebook.md` AFTER the Execution Agent
-> protocol sections. Each amendment specifies where it fits relative to the
-> existing protocol rules.
->
-> **Idempotency:** Each block starts with `<!-- Memory OS amendment — do not duplicate -->`.
-> Before applying, check whether this marker already exists in your rulebook.
-> If it does, skip that block.
+## Mandatory Pre-Action Protocol
 
----
+**This protocol runs BEFORE your first tool call in every turn.** It is not optional. It is the mechanical enforcement of the Ground Truth hierarchy. The most common failure mode of this agent is skipping verification under time pressure — this protocol exists to prevent that specific failure.
 
-<!-- Memory OS amendment — do not duplicate -->
+### Step 1 — Inventory injected context
 
-## Amendment: Memory Architecture Integration
+Open your system prompt. Locate every `[fabric]`, `[qdrant]`, `[sessions]`, `[facts]` block. List what was injected this turn. If a block is absent, note it.
 
-**Insert after** the `## Memory Architecture` section of the Execution Agent protocol.
+### Step 2 — Match against the request
 
-The 6-layer memory architecture (Session → Persistent → Structured → Cross-agent →
-Procedural → Vector) is your operational memory. When the protocol instructs you
-to verify before acting (`Ground Truth` rule), consult the appropriate layer:
+For each injected item, ask: "Does this answer or inform the user's current request?" Be specific — cite the exact entry and why it is or isn't relevant.
 
-- **"What did we decide about X?"** → `session_search` (past transcripts) or `fabric_recall` (cross-agent archive)
-- **"Who is the user / what do they prefer?"** → Persistent memory (`memory` tool)
-- **"What durable fact do we know about X?"** → `fact_store` (SQLite + HRR)
-- **"What does the codebase / wiki say about X?"** → `qdrant_search` (vector, 4096d Cosine + BM25 sparse)
-- **"How do I perform task Y?"** → `skill_view` / `skill_manage` (procedural)
+### Step 3 — Use or declare
 
-When injected memory (labels `[qdrant]`, `[fabric]`, `[sessions]`, `[facts]`)
-appears in your prompt: you already know this. Treat it as prior knowledge —
-verify against runtime evidence when acting, use directly when reasoning.
+- If an injected entry answers the request: **use it directly**. Do not call a tool to rediscover it. Cite it as `[source]`.
+- If no injected entry addresses the request: state explicitly: "No injected context covers [X]. Proceeding with tool verification."
+- If injected context conflicts with request assumptions: **injected context wins** (Ground Truth rule). Adjust your approach.
 
-**Fact feedback rule:** When you retrieve a fact from `fact_store` (via probe,
-search, or reason) and reference it in your response, you MUST call
-`fact_feedback` in the same turn — `action='helpful'` if the fact was accurate
-and useful, `action='unhelpful'` if it was wrong, outdated, or irrelevant.
-Without feedback, `trust_score` is ornamental and fact quality degrades silently.
+### Step 4 — Then act
 
----
+Only after completing Steps 1-3 may you make your first tool call. This sequence must be visible in your response.
 
-<!-- Memory OS amendment — do not duplicate -->
+### Why this exists
 
-## Amendment: Memory OS Infrastructure
+The Ground Truth hierarchy was added on 2026-05-31 and the rules are correct. A production session on 2026-06-07 demonstrated 7 avoidable mistakes — all from the same root cause: seeing a problem, reaching for a terminal, and skipping injected context that already contained the answer. The rules were present in the prompt but not followed.
 
-**Insert after** the `## Defaults` section of the Execution Agent protocol.
-
-Your memory infrastructure runs locally via Docker. These services are defined in
-the Memory OS `docker-compose.yml`:
-
-- **Qdrant** (`qdrant/qdrant:v1.17.1`) — vector database on `127.0.0.1:6333`.
-  Hybrid search: dense 4096d (Cosine) + BM25 sparse. Collection: `knowledge_base`.
-  Requires `QDRANT_API_KEY` environment variable for authentication.
-- **Redis** (`redis:8.6.2`) — ARQ job queue on `127.0.0.1:6379`.
-  Requires `REDIS_PASSWORD` (generate with `openssl rand -hex 16`).
-- **ARQ Worker** — embedding pipeline, file ingestion, decay scanning,
-  semantic dedup. Depends on Qdrant + Redis being healthy (`service_healthy`).
-
-The worker expects these environment variables: `OPENROUTER_API_KEY` (or
-`EMBEDDING_API_KEY`) for embeddings, `QDRANT_URL`, `QDRANT_API_KEY`,
-`REDIS_HOST`, `REDIS_PASSWORD`.
-
----
-
-<!-- Memory OS amendment — do not duplicate -->
-
-## Amendment: Mandatory Verifications
-
-**Insert after** the `## Ground Truth` section of the Execution Agent protocol.
-
-Add a 5th level to the verification hierarchy:
-
-```
-5. Memory OS infrastructure — Qdrant health (`/healthz`), Redis `PING`, ARQ
-   queue depth. When a memory operation fails, verify the infrastructure is
-   healthy before debugging application logic. The worker container exposes
-   port 8000 with a `/health` endpoint.
-```
-
-Before reporting infrastructure state as fact:
-1. Verify Qdrant connectivity: `curl -s http://127.0.0.1:6333/healthz`
-2. Verify Redis connectivity: `redis-cli -a $REDIS_PASSWORD PING`
-3. Check worker health: `curl -s http://127.0.0.1:8000/health`
-4. Check ARQ queue depth via Redis: `redis-cli -a $REDIS_PASSWORD LLEN arq:queue`
+This protocol bridges knowing the rule and executing the rule.
