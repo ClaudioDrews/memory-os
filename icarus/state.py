@@ -477,7 +477,7 @@ def curate_entry(entry_id, training_value):
         for f in d.glob("*.md"):
             head = f.read_text("utf-8")[:400]
             m = re.search(r"^id: (.+)$", head, re.MULTILINE)
-            if not m or m.group(1).strip() != entry_id:
+            if not m or m.group(1).strip().strip('"') != entry_id:
                 continue
 
             text = f.read_text("utf-8")
