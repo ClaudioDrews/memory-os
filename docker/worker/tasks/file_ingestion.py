@@ -157,7 +157,7 @@ async def ingest_file(
     """
     wiki_root = Path(WIKI_PATH).resolve()
     path = Path(file_path).resolve()
-    if not str(path).startswith(str(wiki_root)) or path.suffix != ".md":
+    if not path.is_relative_to(wiki_root) or path.suffix != ".md":
         raise ValueError("file_path must be a .md file under WIKI_PATH")
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
