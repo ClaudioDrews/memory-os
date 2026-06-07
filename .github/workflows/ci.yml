@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Cancel superseded runs on the same ref so a push + its open PR don't both
+# burn a full matrix.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Byte-compile (syntax gate — all modules, not a whitelist)
+        run: python -m compileall -q icarus scripts setup _test_collapse.py _test_sanitize.py
+
+      - name: Collapse tests (pure + Hebbian amplify + attestation + adapter)
+        run: python _test_collapse.py
+
+      - name: Sanitize / prompt-injection tests
+        run: python _test_sanitize.py
+
+      - name: Collapse eval smoke (must run clean)
+        run: python scripts/collapse_eval.py

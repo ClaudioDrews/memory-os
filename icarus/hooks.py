@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import state
+from . import collapse as _collapse
 
 # ── LLM extraction key ──
 _OPENROUTER_KEY = (
@@ -504,6 +505,179 @@ def _sanitize_context_text(text: str, max_len: int = 600) -> str:
         return str(text)[:max_len]
 
 
+# ── Non-bijunctive recall collapse ───────────
+# Master switch + tunables. Set ICARUS_COLLAPSE=0 to restore stock per-source
+# emission (legacy behavior). All values fall back to collapse.DEFAULTS.
+#
+# Env parsing is hardened: a malformed value falls back to the default instead
+# of raising at import time. Without this, a bad ICARUS_COLLAPSE_BUDGET would
+# crash the entire hooks module on import — defeating the fail-open contract
+# that only protects _apply_collapse. (tri-brain Codex BLOCKING, 2026-06-04)
+def _env_num(name, default, cast):
+    """Parse a numeric env var, falling back to ``default`` on any error."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        logger.warning("icarus: invalid %s=%r — using default %r", name, raw, default)
+        return default
+
+
+_COLLAPSE_ON = os.environ.get("ICARUS_COLLAPSE", "1").strip().lower() not in (
+    "0", "false", "no", "off"
+)
+_COLLAPSE_BUDGET = _env_num("ICARUS_COLLAPSE_BUDGET", _collapse.DEFAULTS["budget"], int)
+_COLLAPSE_PRUNE = _env_num("ICARUS_COLLAPSE_PRUNE_RATIO", _collapse.DEFAULTS["prune_ratio"], float)
+# Tunables for the lexical/source balance. Raise overlap_weight toward 1.0 to
+# favor query-token overlap; lower it to let each source's own ranking (recency,
+# FTS, vector score, encoded via rank_decay) carry more weight — the lever for
+# the "strong-but-low-overlap hit gets starved" tradeoff. (tri-brain Grok)
+_COLLAPSE_DUP = _env_num("ICARUS_COLLAPSE_DUP_OVERLAP", _collapse.DEFAULTS["dup_overlap"], float)
+_COLLAPSE_WEIGHT = _env_num("ICARUS_COLLAPSE_OVERLAP_WEIGHT", _collapse.DEFAULTS["overlap_weight"], float)
+_COLLAPSE_DECAY = _env_num("ICARUS_COLLAPSE_RANK_DECAY", _collapse.DEFAULTS["rank_decay"], float)
+# Hebbian cross-source amplify knobs (corroboration boosts salience).
+_COLLAPSE_CORRO = _env_num("ICARUS_COLLAPSE_CORRO_OVERLAP", _collapse.DEFAULTS["corroboration_overlap"], float)
+_COLLAPSE_GAIN = _env_num("ICARUS_COLLAPSE_AMPLIFY_GAIN", _collapse.DEFAULTS["amplify_gain"], float)
+_COLLAPSE_CAP = _env_num("ICARUS_COLLAPSE_AMPLIFY_CAP", _collapse.DEFAULTS["amplify_cap"], float)
+# Observability: ICARUS_COLLAPSE_DEBUG=1 logs the salience-ranked pool (what
+# survived vs pruned, scores, cross-source corroboration) and a physical-entropy
+# attestation hash over the survivor set — making a recall decision auditable
+# and tamper-evident instead of a black box. (answers tri-brain Grok's
+# "unobservable new surface" concern, 2026-06-04)
+_COLLAPSE_DEBUG = os.environ.get("ICARUS_COLLAPSE_DEBUG", "0").strip().lower() in (
+    "1", "true", "yes", "on"
+)
+
+
+def _fabric_text(e):
+    return e.get("summary") or e.get("_body") or e.get("body") or ""
+
+
+def _qdrant_text(r):
+    # Cover the common payload field names — a strong hit whose text lives in
+    # `content`/`body`/`text` must not be mis-scored as weak because we only
+    # looked at title+preview. Tokenize is set-based, so overlap between
+    # content_preview and content is harmless. (tri-brain Codex SHOULD-FIX)
+    fields = ("title", "content_preview", "content", "body", "text", "summary")
+    return " ".join(str(r.get(f, "")) for f in fields if r.get(f)).strip()
+
+
+def _session_text(s):
+    return f"{s.get('title', '')} {s.get('snippet', '')}".strip()
+
+
+def _log_collapse_debug(candidates, qtokens, survivors):
+    """Log the salience-ranked pool + a physical-entropy attestation over the
+    survivor set. Best-effort: never raises into the hot path."""
+    try:
+        kept_keys = {c.get("key") for c in survivors}
+        # Use the SAME tunables the real collapse used, or the debug log would
+        # report different salience/corroboration than the actual decision.
+        ranked = _collapse.score_all(
+            candidates, qtokens,
+            overlap_weight=_COLLAPSE_WEIGHT, rank_decay=_COLLAPSE_DECAY,
+            corroboration_overlap=_COLLAPSE_CORRO,
+            amplify_gain=_COLLAPSE_GAIN, amplify_cap=_COLLAPSE_CAP,
+        )
+        ranked.sort(key=lambda r: r["salience"], reverse=True)
+        logger.info("icarus collapse: %d candidates -> %d survivors",
+                    len(candidates), len(survivors))
+        for r in ranked:
+            c = r["candidate"]
+            mark = "KEEP" if c.get("key") in kept_keys else "prune"
+            logger.info("  [%-5s] %-8s sal=%.3f corro=%d %s",
+                        mark, str(c.get("source")), r["salience"],
+                        r["corroboration"], str(c.get("text", ""))[:48])
+        att = _collapse.attest(survivors)
+        logger.info("  attestation: %s (nonce %s…, %d survivors, %s)",
+                    att["hash"][:16], att["nonce"][:12], att["count"], att["algo"])
+    except Exception:
+        logger.debug("icarus: collapse debug logging failed", exc_info=True)
+
+
+def _apply_collapse(query, fabric, qdrant, sessions, facts):
+    """Run non-bijunctive collapse across all four source lists.
+
+    Builds one unified candidate pool (each tagged with source + within-source
+    rank), collapses it to a single salience-ranked budget, then filters each
+    source list down to the survivors — preserving the exact dict shapes the
+    emission code below already expects.
+
+    Fail-open: on ANY error, returns the inputs unchanged so a collapse bug can
+    never suppress memory injection. This is the whole safety contract.
+    """
+    try:
+        qtokens = _collapse.tokenize(query)
+        candidates = []
+
+        for i, e in enumerate(fabric):
+            candidates.append({
+                "key": ("fabric", i), "source": "fabric",
+                "text": _fabric_text(e), "score": None, "rank": i,
+            })
+        for i, r in enumerate(qdrant):
+            sc = r.get("score")
+            candidates.append({
+                "key": ("qdrant", i), "source": "qdrant",
+                "text": _qdrant_text(r),
+                "score": float(sc) if isinstance(sc, (int, float)) else None,
+                "rank": i,
+            })
+        for i, s in enumerate(sessions):
+            candidates.append({
+                "key": ("sessions", i), "source": "sessions",
+                "text": _session_text(s), "score": None, "rank": i,
+            })
+        for i, f in enumerate(facts):
+            candidates.append({
+                "key": ("facts", i), "source": "facts",
+                "text": str(f), "score": None, "rank": i,
+            })
+
+        if not candidates:
+            return fabric, qdrant, sessions, facts
+
+        survivors = _collapse.collapse(
+            candidates, qtokens,
+            budget=_COLLAPSE_BUDGET, prune_ratio=_COLLAPSE_PRUNE,
+            dup_overlap=_COLLAPSE_DUP, overlap_weight=_COLLAPSE_WEIGHT,
+            rank_decay=_COLLAPSE_DECAY,
+            corroboration_overlap=_COLLAPSE_CORRO,
+            amplify_gain=_COLLAPSE_GAIN, amplify_cap=_COLLAPSE_CAP,
+        )
+        keep = {c["key"] for c in survivors}
+
+        if _COLLAPSE_DEBUG:
+            _log_collapse_debug(candidates, qtokens, survivors)
+
+        # Defensive: if collapse returned nothing despite real candidates, do
+        # NOT suppress everything — fall back to unchanged inputs.
+        if not keep:
+            return fabric, qdrant, sessions, facts
+
+        # Known limitation (tri-brain Grok SHOULD-FIX, accepted as tradeoff):
+        # survivors are filtered again by the per-session _injected_* dedup sets
+        # during emission below. A survivor that's already been injected this
+        # session consumes a budget slot here and is then skipped at emission,
+        # so the net injected count can be < budget. We accept this rather than
+        # replicate the emission keying here (which would risk key drift); the
+        # overlap-gate + per-session dedup already bound re-injection in practice.
+        new_fabric = [e for i, e in enumerate(fabric) if ("fabric", i) in keep]
+        new_qdrant = [r for i, r in enumerate(qdrant) if ("qdrant", i) in keep]
+        new_sessions = [s for i, s in enumerate(sessions) if ("sessions", i) in keep]
+        new_facts = [f for i, f in enumerate(facts) if ("facts", i) in keep]
+        return new_fabric, new_qdrant, new_sessions, new_facts
+    except Exception:
+        # Fail-open: never let a collapse error block memory injection. Logged at
+        # WARNING so a silently-disabled collapse is detectable in production
+        # rather than only inferable from "did the right memories appear?".
+        logger.warning("icarus: recall collapse failed — injecting unchanged",
+                       exc_info=True)
+        return fabric, qdrant, sessions, facts
+
+
 def pre_llm_call(session_id="", user_message="", is_first_turn=False, **kwargs):
     """Inject relevant memories when topic changes (fabric + Qdrant)."""
     global _last_query_tokens
@@ -558,6 +732,16 @@ def pre_llm_call(session_id="", user_message="", is_first_turn=False, **kwargs):
     # ── Bail if nothing from any source ──
     if not results and not qdrant_results and not session_results and not fact_results:
         return None
+
+    # ── Non-bijunctive collapse ──
+    # Unify all four sources into one salience-ranked pool, prune weak paths
+    # relative to the strongest, amplify the strong, and spend a single
+    # cross-source budget. Replaces the stock "emit every per-source quota"
+    # behavior. Fail-open: _apply_collapse returns inputs unchanged on error.
+    if _COLLAPSE_ON:
+        results, qdrant_results, session_results, fact_results = _apply_collapse(
+            user_message, results, qdrant_results, session_results, fact_results
+        )
 
     parts = []
 
