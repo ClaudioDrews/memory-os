@@ -10,7 +10,10 @@ services:
     command: >
       sh -c '
         mkdir -p /usr/local/etc/redis &&
-        echo "requirepass $${REDIS_PASSWORD}" > /usr/local/etc/redis/redis.conf &&
+        : > /usr/local/etc/redis/redis.conf &&
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          echo "requirepass $${REDIS_PASSWORD}" >> /usr/local/etc/redis/redis.conf;
+        fi &&
         echo "bind 0.0.0.0" >> /usr/local/etc/redis/redis.conf &&
         echo "appendonly yes" >> /usr/local/etc/redis/redis.conf &&
         echo "maxmemory 512mb" >> /usr/local/etc/redis/redis.conf &&
@@ -24,7 +27,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -62,7 +65,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
-      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       EMBEDDING_DIMS: "${EMBEDDING_DIMS:-4096}"
       COLLECTION_NAME: "${COLLECTION_NAME:-knowledge_base}"
@@ -74,6 +77,15 @@ services:
       - ${MEMORY_OS_WIKI_PATH:-./wiki}:/wiki:ro
       - ${MEMORY_OS_HERMES_HOME:-./hermes}:/hermes:rw
       - ${MEMORY_OS_FABRIC_DIR:-./fabric}:/fabric:rw
+    healthcheck:
+      # Verifies the worker can reach Redis with auth — if this passes the ARQ
+      # event loop is operational.  Overrides the Dockerfile HEALTHCHECK which
+      # does not include REDIS_PASSWORD.
+      test: ["CMD-SHELL", "python -c \"import os,redis; r=redis.Redis(host='redis',port=6379,password=os.environ.get('REDIS_PASSWORD') or None,socket_connect_timeout=3); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   redis_data:

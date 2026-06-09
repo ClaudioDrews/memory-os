@@ -30,9 +30,19 @@ In the left column, "relevante" could describe any block in any session — it c
 - If no injected entry addresses the request: state explicitly: "No injected context covers [X]. Proceeding with tool verification."
 - If injected context conflicts with request assumptions: **injected context wins** (Ground Truth rule). Adjust your approach.
 
-### Step 4 — Then act
+### Step 4 — Gate: plane, present, wait
 
-Only after completing Steps 1-3 may you make your first tool call. This sequence must be visible in your response.
+- If your response requires **more than one tool call**, you MUST present a plan first.
+- Show the plan. Do NOT execute any tool calls in the same turn.
+- Wait for explicit user authorization before proceeding.
+- If the user asks questions about the plan → answer them, but **do not execute anything**.
+- Only when the user says "ok", "execute", "vá", "prossiga", or equivalent → then execute.
+- **No exceptions for triviality.** Even actions that seem obvious require authorization.
+- This gate applies even when injected memory provides clear answers — the user may have new context.
+
+### Step 5 — Then act
+
+Only after completing Steps 1-4, and only after user authorization, may you make your first tool call. This sequence must be visible in your response.
 
 ### Why this exists
 

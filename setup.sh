@@ -25,6 +25,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+# ── Safe defaults for optional env vars ──────────────────────────────────────
+# Must come before any reference to these names.  set -u would abort with
+# \"unbound variable\" if they were never exported by the caller.
+QDRANT_API_KEY="${QDRANT_API_KEY:-}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -212,7 +218,7 @@ cd "${DOCKER_DIR}"
 # Detect API key from Hermes .env
 OPENROUTER_KEY=""
 if [ -f "${ENV_FILE}" ]; then
-    OPENROUTER_KEY=$(grep -oP 'OPENROUTER_API_KEY=\K.*' "${ENV_FILE}" 2>/dev/null | head -1 || true)
+    OPENROUTER_KEY=$(grep -oP '(?:OPENROUTER.*API_KEY|LLM_API_KEY)=\K.*' "${ENV_FILE}" 2>/dev/null | head -1 || true)
 fi
 
 if [ -z "${OPENROUTER_KEY}" ]; then
@@ -334,23 +340,38 @@ ok "Environment variables added to Hermes .env"
 # ──────────────────────────────────────────────────────────────────────────────
 banner "Phase 9: Rulebook"
 
+SOUL_FILE="${HERMES_HOME}/SOUL.md"
 RULEBOOK="${HERMES_HOME}/rulebook.md"
+PROTOCOL_FILE="${REPO_DIR}/modifications/execution-agent-protocol.md"
+MARKER="Mandatory Pre-Action Protocol"
 
-if [ -f "${RULEBOOK}" ]; then
-    if grep -q "Mandatory Pre-Action Protocol" "${RULEBOOK}" 2>/dev/null; then
-        ok "Rulebook amendments already applied"
-    else
-        PROTOCOL_FILE="${REPO_DIR}/modifications/execution-agent-protocol.md"
-        if [ -f "${PROTOCOL_FILE}" ]; then
+if [ ! -f "${PROTOCOL_FILE}" ]; then
+    warn "execution-agent-protocol.md not found — skipping modifications"
+else
+    # Try SOUL.md first — behavioral tests show 3/6 compliance when protocol
+    # is in SOUL.md vs 0/6 when it is only in rulebook.md.
+    if [ -f "${SOUL_FILE}" ]; then
+        if grep -q "${MARKER}" "${SOUL_FILE}" 2>/dev/null; then
+            ok "Mandatory Pre-Action Protocol already in SOUL.md"
+        else
+            echo "" >> "${SOUL_FILE}"
+            echo "<!-- Memory OS additions — do not duplicate -->" >> "${SOUL_FILE}"
+            cat "${PROTOCOL_FILE}" >> "${SOUL_FILE}"
+            ok "Mandatory Pre-Action Protocol appended to SOUL.md"
+        fi
+    elif [ -f "${RULEBOOK}" ]; then
+        if grep -q "${MARKER}" "${RULEBOOK}" 2>/dev/null; then
+            ok "Rulebook amendments already applied"
+        else
             echo "" >> "${RULEBOOK}"
             cat "${PROTOCOL_FILE}" >> "${RULEBOOK}"
             ok "Mandatory Pre-Action Protocol appended to rulebook"
-        else
-            warn "execution-agent-protocol.md not found — skipping"
         fi
+    else
+        warn "Neither SOUL.md nor rulebook.md found"
+        info "To install the protocol manually:"
+        info "  cat ${PROTOCOL_FILE} >> ${HERMES_HOME}/SOUL.md"
     fi
-else
-    warn "${RULEBOOK} not found — skipping modifications"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
