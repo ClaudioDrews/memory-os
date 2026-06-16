@@ -321,10 +321,14 @@ def write_entry(entry_type, content, summary, tier="hot", tags="", platform="cli
     suffix = secrets.token_hex(2)
     # derive a short slug from the summary for human-readable filenames
     slug = re.sub(r"[^a-z0-9]+", "-", summary.lower().strip())[:40].strip("-")
+    # entry_type is caller/tool-controlled and is used as a path component below;
+    # slugify it the same way as the summary so it can't introduce path separators
+    # or traversal sequences into the filename.
+    type_slug = re.sub(r"[^a-z0-9]+", "-", entry_type.lower().strip())[:32].strip("-") or "entry"
     if slug:
-        filename = f"{agent}-{entry_type}-{slug}-{suffix}.md"
+        filename = f"{agent}-{type_slug}-{slug}-{suffix}.md"
     else:
-        filename = f"{agent}-{entry_type}-{ts}-{suffix}.md"
+        filename = f"{agent}-{type_slug}-{ts}-{suffix}.md"
 
     sid = session_id or os.environ.get(
         "FABRIC_SESSION_ID", f"sess-{now.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}")
