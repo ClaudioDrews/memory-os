@@ -91,7 +91,12 @@ search_with_fallback(query, top_k=2, threshold=0.55):
     6. fail -> return empty
 ```
 
-**Key injection pitfall:** `context_enhancer.py` reads `OPENROUTER_API_KEY` (singular) from `os.environ`, but some environments use split keys (`OPENROUTER_FULL_API_KEY`, `OPENROUTER_DS_API_KEY`). Before importing, inject: `os.environ["OPENROUTER_API_KEY"] = resolved_key`. Without this, `embed_query()` fails silently and search falls back to lexical-only.
+`context_enhancer.py` accepts any OpenAI-compatible endpoint through
+`EMBEDDING_API_BASE`, with `EMBEDDING_API_KEY` for authenticated custom
+providers. OpenRouter remains the default and continues to use
+`OPENROUTER_API_KEY`. Query embedding is synchronous so retrieval completes
+before the main LLM receives its prompt; timeout/retry behavior is controlled by
+`EMBEDDING_REQUEST_TIMEOUT` and `EMBEDDING_REQUEST_RETRIES`.
 
 ## Injecting into System Prompt
 

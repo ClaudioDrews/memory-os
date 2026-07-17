@@ -148,6 +148,9 @@ EMBEDDING_DIMS=4096
 # (vLLM with --api-key, custom hosted services). Not needed for OpenRouter
 # or local unauthenticated providers.
 # EMBEDDING_API_KEY=your-key-here
+# EMBEDDING_REQUEST_TIMEOUT=30
+# EMBEDDING_REQUEST_RETRIES=1
+# ICARUS_MEMORY_DEGRADED_WARNING=⚠️ Semantic Wiki search is temporarily unavailable; this response may use incomplete context.
 
 # Optional
 ICARUS_OBSIDIAN=1
@@ -342,7 +345,9 @@ Check: `ICARUS_EXTRACTION_MAX_TOKENS=4096` in `.env` AND gateway was restarted a
 Icarus is writing to MEMORY.md instead of CREATIVE.md. Verify Icarus fork is installed (not upstream esaradev version).
 
 ### Context injection not working
-Check: OpenRouter API key is set, `context_enhancer.py` can import, gateway restarted after `hooks.py` edits.
+Check: the configured embedding endpoint and its required credential are set,
+`context_enhancer.py` can import, and the gateway was restarted after
+`hooks.py` or embedding environment changes.
 
 ### Decay scanner produces "0 archived" every week
 Most likely: point payloads missing `last_accessed_at` or `importance_score` metadata. Run backfill before enabling decay.
