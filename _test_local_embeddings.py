@@ -29,6 +29,7 @@ class LocalEmbeddingTests(unittest.TestCase):
             "EMBEDDING_MODEL": ce.EMBEDDING_MODEL,
             "REQUEST_TIMEOUT": ce.REQUEST_TIMEOUT,
             "EMBEDDING_REQUEST_RETRIES": ce.EMBEDDING_REQUEST_RETRIES,
+            "SPARSE_QUERY_ENABLED": ce.SPARSE_QUERY_ENABLED,
         }
 
     def tearDown(self):
@@ -67,6 +68,13 @@ class LocalEmbeddingTests(unittest.TestCase):
         self.assertEqual(result.error, "embedding_timeout")
         self.assertEqual(post.call_count, 2)
         sleep.assert_called_once()
+
+    @mock.patch.object(ce.subprocess, "run")
+    def test_sparse_query_can_be_disabled_without_subprocess(self, run):
+        ce.SPARSE_QUERY_ENABLED = False
+
+        self.assertIsNone(ce.embed_query_sparse("wiki query"))
+        run.assert_not_called()
 
     def test_pre_llm_hook_requires_warning_before_answer(self):
         old_tokens = hooks._last_query_tokens

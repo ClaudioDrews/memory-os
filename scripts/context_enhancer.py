@@ -56,6 +56,9 @@ EMBEDDING_REQUEST_RETRIES = max(
 
 # FastEmbed BM25 config
 FASTEMBED_VENV = os.environ.get("FASTEMBED_VENV", "")
+SPARSE_QUERY_ENABLED = os.environ.get(
+    "ICARUS_SPARSE_QUERY_ENABLED", "1"
+).strip().lower() not in ("0", "false", "no", "off")
 
 # Default: use current Python if venv not configured
 _FASTEMBED_PYTHON = FASTEMBED_VENV if FASTEMBED_VENV else sys.executable
@@ -273,6 +276,8 @@ def embed_query_sparse(text: str) -> Optional[Tuple[List[int], List[float]]]:
     Query text passes via stdin — never embedded in a -c code string.
     Fail-open: if it fails, return None. Caller falls back to dense-only.
     """
+    if not SPARSE_QUERY_ENABLED:
+        return None
     try:
         result = subprocess.run(
             [_FASTEMBED_PYTHON, "-c", """\

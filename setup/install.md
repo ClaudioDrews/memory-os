@@ -151,6 +151,7 @@ EMBEDDING_DIMS=4096
 # EMBEDDING_REQUEST_TIMEOUT=30
 # EMBEDDING_REQUEST_RETRIES=1
 # ICARUS_MEMORY_DEGRADED_WARNING=⚠️ Semantic Wiki search is temporarily unavailable; this response may use incomplete context.
+# ICARUS_SPARSE_QUERY_ENABLED=0  # when FastEmbed is absent in the Hermes runtime
 
 # Optional
 ICARUS_OBSIDIAN=1

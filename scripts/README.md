@@ -46,6 +46,8 @@ Key variables:
   endpoints; `OPENROUTER_API_KEY` remains the legacy OpenRouter credential.
 - `EMBEDDING_REQUEST_TIMEOUT` / `EMBEDDING_REQUEST_RETRIES` — bound synchronous
   query-time retrieval, including local model cold starts.
+- `ICARUS_SPARSE_QUERY_ENABLED=0` — skip query-time FastEmbed BM25 when it is
+  not installed; Qdrant falls back immediately to dense-only search.
 - `WIKI_PATH` — wiki root directory (default: `~/vault/wiki`)
 - `COLLECTION_NAME` — Qdrant collection (default: `knowledge_base`)
 - `EMBEDDING_DIMS` — vector dimensions (default: 4096)
