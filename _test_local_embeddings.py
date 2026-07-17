@@ -2,7 +2,9 @@
 
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import requests
@@ -75,6 +77,28 @@ class LocalEmbeddingTests(unittest.TestCase):
 
         self.assertIsNone(ce.embed_query_sparse("wiki query"))
         run.assert_not_called()
+
+    def test_context_enhancer_loads_from_mounted_hermes_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            helper = Path(tmp) / "scripts" / "context_enhancer.py"
+            helper.parent.mkdir()
+            helper.write_text("MOUNTED = True\n", encoding="utf-8")
+            sys.modules.pop("icarus_context_enhancer", None)
+
+            with (
+                mock.patch.object(
+                    hooks.importlib,
+                    "import_module",
+                    side_effect=ModuleNotFoundError(
+                        "No module named 'scripts'", name="scripts"
+                    ),
+                ),
+                mock.patch.object(hooks.state, "HERMES_HOME", Path(tmp)),
+            ):
+                loaded = hooks._load_context_enhancer()
+
+            self.assertTrue(loaded.MOUNTED)
+            sys.modules.pop("icarus_context_enhancer", None)
 
     def test_pre_llm_hook_requires_warning_before_answer(self):
         old_tokens = hooks._last_query_tokens

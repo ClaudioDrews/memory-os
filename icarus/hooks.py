@@ -1,9 +1,12 @@
 """Lifecycle hooks — memory capture, decision detection, creative tracking."""
 
 import json
+import importlib
+import importlib.util
 import logging
 import os
 import re
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -140,6 +143,56 @@ _last_query_tokens: set = set()
 _injected_fabric: set = set()
 _injected_qdrant: set = set()
 _injected_sessions: set = set()
+
+
+def _load_context_enhancer():
+    """Load context_enhancer in both source and mounted Hermes layouts.
+
+    Upstream source checkouts expose ``scripts`` as an importable namespace
+    package. Container deployments commonly mount the single helper below the
+    Hermes data directory while the agent process runs from another cwd, so
+    that namespace is absent from ``sys.path``. Resolve that layout explicitly
+    instead of making retrieval depend on the process working directory.
+    """
+    try:
+        return importlib.import_module("scripts.context_enhancer")
+    except ModuleNotFoundError as exc:
+        if exc.name not in ("scripts", "scripts.context_enhancer"):
+            raise
+
+    candidates = []
+    configured = os.environ.get("ICARUS_CONTEXT_ENHANCER_PATH", "").strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+
+    hermes_home = getattr(state, "HERMES_HOME", None)
+    if hermes_home:
+        candidates.append(Path(hermes_home) / "scripts" / "context_enhancer.py")
+
+    candidates.append(Path(__file__).resolve().parents[1] / "scripts" / "context_enhancer.py")
+
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        module_name = "icarus_context_enhancer"
+        cached = sys.modules.get(module_name)
+        if cached is not None:
+            return cached
+        spec = importlib.util.spec_from_file_location(module_name, candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        return module
+
+    raise ModuleNotFoundError(
+        "context_enhancer.py was not found; set ICARUS_CONTEXT_ENHANCER_PATH"
+    )
 
 
 def _tokenize(text):
@@ -285,12 +338,10 @@ def _search_qdrant_with_status(query, top_k=2, threshold=0.72):
         if _OPENROUTER_KEY and not old_api_key:
             os.environ["OPENROUTER_API_KEY"] = _OPENROUTER_KEY
 
-        from scripts.context_enhancer import (
-            embed_query_sparse, embed_query_with_status, search_with_fallback
-        )
-        embedding = embed_query_with_status(query)
-        sparse = embed_query_sparse(query)
-        results, level, _qdrant_ms, _fallback_ms = search_with_fallback(
+        context_enhancer = _load_context_enhancer()
+        embedding = context_enhancer.embed_query_with_status(query)
+        sparse = context_enhancer.embed_query_sparse(query)
+        results, level, _qdrant_ms, _fallback_ms = context_enhancer.search_with_fallback(
             dense_vector=embedding.vector,
             sparse_vector=sparse,
             query_text=query,
