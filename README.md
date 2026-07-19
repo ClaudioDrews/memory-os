@@ -157,6 +157,11 @@ Because almost every modern memory solution is **cloud-first**. If you want real
 - **Vault Curator v3** — [ClaudioDrews/vault-curator](https://github.com/ClaudioDrews/vault-curator)  
   Frontmatter enrichment, semantic linking, and MOC index generation for the wiki layer.
 
+- **Hermes Tweet companion plugin** — [Xquik-dev/hermes-tweet](https://github.com/Xquik-dev/hermes-tweet)
+  Supplies X account, post, trend, and search context to Hermes workflows. Memory OS can preserve the resulting research through its existing session capture. Install it with `hermes plugins install Xquik-dev/hermes-tweet --enable`.
+
+  Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ---
 
 ## Who this is for
@@ -172,6 +177,6 @@ If you're like me — tired of amnesiac agents — Memory OS was built for you.
 **Want to see the agent remember for real?**  
 Clone it, run it, feel the difference.
 
-→ [Quick install](setup.sh) · [Manual guide](setup/install.md) · [Layer deep-dives](layers/) · [Infrastructure docs](infrastructure/architecture.md) · [Operational skills](skills/) · [License](LICENSE)
+→ [Quick install](QUICKSTART.md) · [Manual guide](setup/install.md) · [Layer deep-dives](layers/) · [Infrastructure docs](infrastructure/architecture.md) · [Operational skills](skills/) · [License](LICENSE)
 
 MIT License · Built with obsession by someone who runs Hermes every single day.
