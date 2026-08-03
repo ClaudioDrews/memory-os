@@ -309,12 +309,17 @@ def _search_qdrant(query, top_k=2, threshold=0.72):
 
 
 def _resolve_state_db():
-    """Locate the Hermes session DB. Prefer state.HERMES_HOME, fall back to ~/.hermes."""
+    """Locate the Hermes session DB (profile-aware).
+
+    Resolves via state.hermes_home() — which follows HERMES_HOME when a
+    non-default profile is active — and falls back to the default profile's
+    ~/.hermes/state.db.
+    """
     import sqlite3  # noqa: F401 (ensure available)
     candidates = []
-    home = getattr(state, "HERMES_HOME", None)
-    if home:
-        candidates.append(Path(home) / "state.db")
+    home = getattr(state, "hermes_home", None)
+    if callable(home):
+        candidates.append(home() / "state.db")
     candidates.append(Path.home() / ".hermes" / "state.db")
     for c in candidates:
         if c and c.exists():
@@ -402,9 +407,9 @@ def _search_facts(query, top_k=3):
     """
     import sqlite3
     db = Path.home() / ".hermes" / "memory_store.db"
-    home = getattr(state, "HERMES_HOME", None)
-    if home and (Path(home) / "memory_store.db").exists():
-        db = Path(home) / "memory_store.db"
+    home = getattr(state, "hermes_home", None)
+    if callable(home):
+        db = home() / "memory_store.db"
     if not db.exists():
         return []
 

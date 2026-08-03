@@ -17,14 +17,16 @@ from arq import create_pool
 from arq.connections import RedisSettings
 import redis.asyncio as aioredis
 
-# ─── Config ────────────────────────────────────────────────────────────────
+# ─── Config (profile-aware) ────────────────────────────────────────────────
+from hermes_env import hermes_home, wiki_state_file, wiki_failures_file
+
 ENV_PATH = Path.home() / "memory-os" / "docker" / ".env"
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
 WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", str(Path.home() / "vault" / "wiki")))
-STATE_FILE = Path.home() / ".hermes" / "wiki_ingest_state.json"
-FAILURES_FILE = Path.home() / ".hermes" / "wiki_ingest_failures.json"
+STATE_FILE = wiki_state_file()
+FAILURES_FILE = wiki_failures_file()
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
 
 # Fallback: read REDIS_PASSWORD from Docker .env if not in environment (cron context)

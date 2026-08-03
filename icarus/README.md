@@ -256,18 +256,37 @@ Export modes:
 - `normal` -- excludes low-value and skips noisy unstructured session notes unless grounded
 - `high-volume` -- everything
 
-## Profiles (Hermes v0.6.0)
+## Profiles (Hermes v0.6.0+)
+
+Hermes supports multiple profiles, and Memory OS is profile-aware.  When a
+non-default profile is active, Hermes sets `HERMES_HOME` to
+`<root>/profiles/<name>` (e.g. `~/.hermes/profiles/coder`), and Memory OS
+resolves every Hermes-owned path from it — fabric, `state.db`,
+`memory_store.db`, logs, wiki state, DLQ, SOUL.md.  Each profile gets its
+own memory automatically.
 
 ```bash
 hermes profile create coder
 hermes profile create reviewer --clone
-mkdir -p ~/.hermes-coder/plugins/icarus ~/.hermes-reviewer/plugins/icarus
-cp -r icarus-plugin/* ~/.hermes-coder/plugins/icarus/
-cp -r icarus-plugin/* ~/.hermes-reviewer/plugins/icarus/
+
+# Install Memory OS / Icarus into each profile
+bash setup.sh --profile coder
+bash setup.sh --profile reviewer
+
 hermes -p coder chat
 ```
 
-Both profiles write to the same `FABRIC_DIR`, so the reviewer sees the coder's work.
+By default each profile writes to its own `FABRIC_DIR`
+(`<profile-home>/fabric`), so coder and reviewer memories stay isolated.
+
+To deliberately **share** a fabric between profiles (e.g. the reviewer reads
+the coder's work), set `FABRIC_DIR` explicitly to the same absolute path in
+each profile's `.env`:
+
+```bash
+# ~/.hermes/profiles/coder/.env  and  ~/.hermes/profiles/reviewer/.env
+FABRIC_DIR=/home/you/vault/fabric
+```
 
 ## Fallback models
 

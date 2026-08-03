@@ -28,6 +28,8 @@ from arq import create_pool
 from arq.connections import RedisSettings
 import redis.asyncio as aioredis
 
+from hermes_env import hermes_home, reflection_log
+
 # ─── Config ────────────────────────────────────────────────────────────────
 ENV_PATH = Path.home() / "ai-stack" / "cognitive-agent" / ".env"
 if ENV_PATH.exists():
@@ -44,7 +46,7 @@ redis_settings = RedisSettings(
     password=REDIS_PASSWORD or None,
 )
 
-LOG_FILE = Path.home() / ".hermes" / "logs" / "reflection_trigger.log"
+LOG_FILE = reflection_log()
 
 
 def log_message(msg: str):
@@ -105,7 +107,7 @@ async def check_budget() -> tuple[bool, int, int]:
     """Retorna (permitido, used, max) baseado no contador da hora no SQLite."""
     try:
         import sqlite3
-        db_path = Path.home() / ".hermes" / "state.db"
+        db_path = hermes_home() / "state.db"
         hour_window = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()
@@ -123,7 +125,7 @@ def increment_budget():
     """Incrementa o contador de reflections no SQLite."""
     try:
         import sqlite3
-        db_path = Path.home() / ".hermes" / "state.db"
+        db_path = hermes_home() / "state.db"
         hour_window = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
         conn = sqlite3.connect(str(db_path))
         c = conn.cursor()

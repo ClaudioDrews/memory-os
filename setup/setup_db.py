@@ -22,8 +22,10 @@ import sys
 from pathlib import Path
 
 
-# ── Default paths ──────────────────────────────────────────────────────────
-DEFAULT_HERMES_HOME = Path.home() / ".hermes"
+# ── Default paths (profile-aware) ─────────────────────────────────────────
+# Honor HERMES_HOME when set (Hermes sets it to <root>/profiles/<name> for a
+# non-default profile) so setup_db creates per-profile databases.
+DEFAULT_HERMES_HOME = Path(os.environ.get("HERMES_HOME", "").strip() or (Path.home() / ".hermes"))
 DEFAULT_STATE_DB = DEFAULT_HERMES_HOME / "state.db"
 DEFAULT_MEMORY_DB = DEFAULT_HERMES_HOME / "memory_store.db"
 

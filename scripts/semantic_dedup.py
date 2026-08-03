@@ -31,14 +31,16 @@ try:
 except ImportError:
     _has_qdrant_client = False
 
-# ─── Config ────────────────────────────────────────────────────────────────
+# ─── Config (profile-aware) ────────────────────────────────────────────────
+from hermes_env import hermes_home, logs_dir
+
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 SCROLL_LIMIT = 50  # paginação Qdrant (evita timeout em coleções grandes)
 SIMILARITY_THRESHOLD = 0.92
 TOP_NEIGHBORS = 10
 
-LOG_DIR = Path.home() / ".hermes" / "logs"
+LOG_DIR = logs_dir()
 LOG_FILE = LOG_DIR / "semantic_dedup.log"
 REPORT_FILE = LOG_DIR / "semantic_dedup_report.json"
 

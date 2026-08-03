@@ -7,6 +7,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 import urllib.error
@@ -16,13 +17,51 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-FABRIC_DIR = Path(os.environ.get("FABRIC_DIR", Path.home() / "fabric"))
+# ── Profile-aware paths ────────────────────────────────────────────────────
+# Hermes sets HERMES_HOME to <root>/profiles/<name> when a non-default profile
+# is active.  Resolve every Hermes-owned path through state.hermes_home() so
+# separate profiles get separate memories (state, fabric, logs, registry).
+# An explicit FABRIC_DIR env var still wins — that is how you deliberately
+# share a fabric between profiles.
+#
+# hermes_home/profile_name/is_profile live in scripts/hermes_env.py — import
+# them from there (same pattern as fabric-retrieve.py) instead of duplicating
+# the resolution logic, so there is one source of truth for profile layout.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+try:
+    from hermes_env import hermes_home, profile_name, is_profile
+except ImportError:
+    def hermes_home() -> Path:
+        env = os.environ.get("HERMES_HOME", "").strip()
+        return Path(env).expanduser() if env else Path.home() / ".hermes"
+
+    def profile_name() -> str:
+        home = hermes_home()
+        if home.parent.name == "profiles":
+            return home.name
+        text = str(home)
+        if ".hermes-" in text:
+            return text.split(".hermes-")[-1].rstrip("/")
+        return ""
+
+    def is_profile() -> bool:
+        return bool(profile_name())
+
+
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", "")) if os.environ.get("HERMES_HOME") else None
 AGENT_NAME = os.environ.get("HERMES_AGENT_NAME", "")
 PLUGIN_DIR = Path(__file__).parent
 
-if not AGENT_NAME and HERMES_HOME and ".hermes-" in str(HERMES_HOME):
-    AGENT_NAME = str(HERMES_HOME).split(".hermes-")[-1].rstrip("/")
+if not AGENT_NAME and HERMES_HOME:
+    AGENT_NAME = profile_name()
+
+FABRIC_DIR = Path(
+    os.environ.get(
+        "FABRIC_DIR",
+        # default: per-profile fabric when a profile is active, else ~/fabric
+        str(hermes_home() / "fabric") if is_profile() else str(Path.home() / "fabric"),
+    )
+)
 
 # ── Shared regexes (used by hooks.py and scoring) ────────
 DECISION_RE = re.compile(
@@ -40,7 +79,7 @@ session_id = ""
 exchanges: list = []
 
 # ── Training job tracking ────────────────────────────────
-_JOB_FILE = (HERMES_HOME or Path.home()) / ".icarus-training-job.txt"
+_JOB_FILE = hermes_home() / ".icarus-training-job.txt"
 
 
 def _last_job_id():
@@ -54,7 +93,7 @@ def _save_job_id(jid):
 
 
 # ── Model registry ───────────────────────────────────────
-_REGISTRY_FILE = (HERMES_HOME or Path.home()) / ".icarus-models.json"
+_REGISTRY_FILE = hermes_home() / ".icarus-models.json"
 
 
 def _load_registry():
@@ -78,7 +117,7 @@ def list_models():
 
 
 # ── Retrieval telemetry ──────────────────────────────────
-_TELEMETRY_FILE = (HERMES_HOME or Path.home()) / ".icarus-telemetry.jsonl"
+_TELEMETRY_FILE = hermes_home() / ".icarus-telemetry.jsonl"
 
 # in-memory buffer for current session
 _recall_log: list = []
@@ -260,7 +299,7 @@ def build_brief():
 
 
 # ── Creative state ───────────────────────────────────────
-_STATE_FILE = (HERMES_HOME or Path.home()) / ".icarus-state.json"
+_STATE_FILE = hermes_home() / ".icarus-state.json"
 
 
 def load_creative():

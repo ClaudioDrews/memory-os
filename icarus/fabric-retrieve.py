@@ -19,8 +19,19 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-FABRIC_DIR = Path(os.environ.get("FABRIC_DIR", Path.home() / "fabric"))
-STATE_DB = Path(os.environ.get("STATE_DB_PATH", Path.home() / ".hermes" / "state.db"))
+# Profile-aware paths: resolve through scripts/hermes_env when run standalone,
+# else fall back to ~/.hermes for the default profile.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+try:
+    from hermes_env import hermes_home, fabric_dir
+    _HH = hermes_home
+    _FD = fabric_dir
+except ImportError:
+    _HH = lambda: Path.home() / ".hermes"
+    _FD = lambda: Path.home() / "fabric"
+
+FABRIC_DIR = Path(os.environ.get("FABRIC_DIR", str(_FD())))
+STATE_DB = Path(os.environ.get("STATE_DB_PATH", str(_HH() / "state.db")))
 
 # ── SQLite fabric index (avoids glob+parse on every retrieval) ──────────
 
