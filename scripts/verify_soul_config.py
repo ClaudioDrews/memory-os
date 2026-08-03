@@ -7,7 +7,9 @@ Exits 0 if all checks pass, 1 if any are missing.
 import sys
 from pathlib import Path
 
-SOUL_PATH = Path.home() / ".hermes" / "SOUL.md"
+from hermes_env import soul_path
+
+SOUL_PATH = soul_path()
 MEMORY_OS_MARKER = "<!-- Memory OS additions — do not duplicate -->"
 
 CHECKS = {
@@ -24,7 +26,7 @@ CHECKS = {
         ],
         "fix_hint": (
             "Add the Ground Truth hierarchy from "
-            "modifications/soul-rulebook.md to ~/.hermes/SOUL.md"
+            "modifications/soul-rulebook.md to " + str(SOUL_PATH)
         ),
     },
     "context_injection": {
@@ -37,7 +39,7 @@ CHECKS = {
         ],
         "fix_hint": (
             "Add the Context Injection Convention from "
-            "modifications/soul-rulebook.md to ~/.hermes/SOUL.md"
+            "modifications/soul-rulebook.md to " + str(SOUL_PATH)
         ),
     },
     "fact_feedback": {
@@ -49,7 +51,7 @@ CHECKS = {
         ],
         "fix_hint": (
             "Add the Fact Feedback Rule from "
-            "modifications/soul-rulebook.md to ~/.hermes/SOUL.md"
+            "modifications/soul-rulebook.md to " + str(SOUL_PATH)
         ),
     },
     "honcho_deprecation": {
@@ -61,7 +63,7 @@ CHECKS = {
         ],
         "fix_hint": (
             "Add the Honcho deprecation notice from "
-            "modifications/soul-rulebook.md to ~/.hermes/SOUL.md"
+            "modifications/soul-rulebook.md to " + str(SOUL_PATH)
         ),
     },
 }

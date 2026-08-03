@@ -64,7 +64,50 @@ fi
 
 REPO_URL="https://github.com/ClaudioDrews/memory-os.git"
 REPO_DIR="${HOME}/memory-os"
-HERMES_HOME="${HOME}/.hermes"
+
+# ── Profile support ─────────────────────────────────────────────────────────
+# Pass --profile <name> to install into that Hermes profile instead of the
+# default ~/.hermes.  Each profile gets its own HERMES_HOME
+# (<root>/profiles/<name>), so its memory (fabric, state.db, logs) stays
+# isolated from other profiles.
+PROFILE_NAME=""
+_prev_arg=""
+for arg in "$@"; do
+    case "${arg}" in
+        --profile)
+            _prev_arg="--profile"
+            ;;
+        --profile=*)
+            PROFILE_NAME="${arg#--profile=}"
+            ;;
+        *)
+            if [ "${_prev_arg}" = "--profile" ]; then
+                PROFILE_NAME="${arg}"
+                _prev_arg=""
+            fi
+            ;;
+    esac
+done
+
+# Restrict to a safe charset — PROFILE_NAME becomes a directory component
+# below, so reject anything that could escape ~/.hermes/profiles/.
+case "${PROFILE_NAME}" in
+    *[!A-Za-z0-9_-]*)
+        fail "Invalid --profile name '${PROFILE_NAME}' — use only letters, numbers, '_' and '-'"
+        exit 1
+        ;;
+esac
+
+if [ -n "${PROFILE_NAME}" ]; then
+    HERMES_HOME="${HOME}/.hermes/profiles/${PROFILE_NAME}"
+else
+    HERMES_HOME="${HOME}/.hermes"
+fi
+# Export so subprocesses (setup/setup_db.py, python3 invocations below) that
+# read HERMES_HOME from the environment see the active profile instead of
+# silently falling back to ~/.hermes.
+export HERMES_HOME
+
 VAULT_PATH="${VAULT_PATH:-${HOME}/vault}"
 ENV_FILE="${HERMES_HOME}/.env"
 
@@ -201,6 +244,15 @@ chmod -R 755 "${VAULT_PATH}/fabric"
 ok "Directory structure created at ${VAULT_PATH}"
 info "Permissions set to 755 on wiki/ and fabric/ (ensures Docker worker read access)"
 
+if [ -n "${PROFILE_NAME}" ]; then
+    # Profiles default to their own fabric under HERMES_HOME (see Phase 8 —
+    # we deliberately don't write FABRIC_DIR into the profile .env), so
+    # create it here rather than relying on the shared ${VAULT_PATH}/fabric.
+    mkdir -p "${HERMES_HOME}/fabric"
+    chmod -R 755 "${HERMES_HOME}/fabric"
+    ok "Profile fabric directory created at ${HERMES_HOME}/fabric"
+fi
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Phase 7: Docker Stack
 # ──────────────────────────────────────────────────────────────────────────────
@@ -295,8 +347,16 @@ cd "${REPO_DIR}"
 # ──────────────────────────────────────────────────────────────────────────────
 banner "Phase 7b: Wiki Watcher"
 
-CRON_ENTRY="0 * * * * cd ${REPO_DIR} && python3 scripts/wiki_continuous_ingest.py >> ${HERMES_HOME}/logs/wiki-ingest.log 2>&1"
-CRON_MARKER="# memory-os wiki watcher"
+CRON_ENTRY="0 * * * * cd ${REPO_DIR} && HERMES_HOME=${HERMES_HOME} python3 scripts/wiki_continuous_ingest.py >> ${HERMES_HOME}/logs/wiki-ingest.log 2>&1"
+# System crontab doesn't propagate Hermes's profile env the way Hermes cron
+# does, so HERMES_HOME is set inline above. The marker is per-profile too —
+# otherwise a second `setup.sh --profile X` run would see the first
+# profile's marker and skip installing its own cron entry.
+if [ -n "${PROFILE_NAME}" ]; then
+    CRON_MARKER="# memory-os wiki watcher (${PROFILE_NAME})"
+else
+    CRON_MARKER="# memory-os wiki watcher"
+fi
 
 if crontab -l 2>/dev/null | grep -qF "${CRON_MARKER}"; then
     ok "Wiki watcher cron already installed"
@@ -325,7 +385,14 @@ add_env() {
     echo "${key}=${value}" >> "${ENV_FILE}"
 }
 
-add_env "FABRIC_DIR" "${VAULT_PATH}/fabric"
+if [ -z "${PROFILE_NAME}" ]; then
+    add_env "FABRIC_DIR" "${VAULT_PATH}/fabric"
+else
+    # Leave FABRIC_DIR unset so each profile falls back to its own
+    # <HERMES_HOME>/fabric (hermes_env.fabric_dir()) instead of every
+    # profile colliding on the shared ${VAULT_PATH}/fabric.
+    info "FABRIC_DIR left unset — profile '${PROFILE_NAME}' defaults to ${HERMES_HOME}/fabric"
+fi
 add_env "ICARUS_EXTRACTION_MAX_TOKENS" "4096"
 add_env "ICARUS_EXTRACTION_MODEL" "deepseek/deepseek-v4-flash"
 add_env "EMBEDDING_API_BASE" "https://openrouter.ai/api/v1"

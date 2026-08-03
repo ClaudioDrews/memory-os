@@ -17,10 +17,15 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict, field
 from collections import Counter
 
-# ─── Config ────────────────────────────────────────────────────────────────
-DLQ_PATH = os.path.expanduser("~/.hermes/wiki_ingest_failures.json")
-REPORT_LOG = os.path.expanduser("~/.hermes/cron/output/dlq_reports.jsonl")
-REPORT_DIR = os.path.expanduser("~/.hermes/cron/output/quality_report")
+# ─── Config (profile-aware) ────────────────────────────────────────────────
+# Hermes sets HERMES_HOME to <root>/profiles/<name> when a non-default profile
+# is active; hermes_env resolves all Hermes-owned paths from it.
+from hermes_env import hermes_home
+
+_HH = hermes_home()
+DLQ_PATH = _HH / "wiki_ingest_failures.json"
+REPORT_LOG = _HH / "cron" / "output" / "dlq_reports.jsonl"
+REPORT_DIR = _HH / "cron" / "output" / "quality_report"
 MAX_REPORT_HISTORY = 100  # entradas no JSONL
 
 # ─── Data Model ─────────────────────────────────────────────────────────────
@@ -54,7 +59,7 @@ def load_dlq() -> List[DLQEntry]:
         return []
 
 def save_dlq(entries: List[DLQEntry]):
-    tmp = DLQ_PATH + ".tmp"
+    tmp = str(DLQ_PATH) + ".tmp"
     with open(tmp, "w") as f:
         json.dump([asdict(e) for e in entries], f, indent=2)
         f.flush()

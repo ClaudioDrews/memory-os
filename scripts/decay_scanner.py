@@ -27,11 +27,13 @@ import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ─── Config ────────────────────────────────────────────────────────────────
+# ─── Config (profile-aware) ────────────────────────────────────────────────
+from hermes_env import hermes_home, logs_dir
+
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 SCROLL_LIMIT = 100  # paginação Qdrant
-LOG_DIR = Path.home() / ".hermes" / "logs"
+LOG_DIR = logs_dir()
 LOG_FILE = LOG_DIR / "decay_scanner.log"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────

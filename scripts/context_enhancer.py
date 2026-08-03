@@ -58,17 +58,18 @@ _FASTEMBED_SITEPKGS = os.environ.get(
 )
 BM25_MODEL = "Qdrant/bm25"
 
-# Lineage config
-LINEAGE_DB = os.environ.get(
-    "STATE_DB_PATH",
-    os.path.expanduser("~/.hermes/state.db")
-)
+# Lineage config (profile-aware)
+# Ensure the scripts dir is importable both when run standalone and when
+# imported as a package module (e.g. from the repo root in tests).
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from hermes_env import hermes_home, state_db, query_telemetry_log
+
+LINEAGE_DB = os.environ.get("STATE_DB_PATH", str(state_db()))
 
 # Telemetry config
-TELEMETRY_LOG = os.environ.get(
-    "TELEMETRY_LOG_PATH",
-    os.path.expanduser("~/.hermes/logs/query-telemetry.jsonl")
-)
+TELEMETRY_LOG = os.environ.get("TELEMETRY_LOG_PATH", str(query_telemetry_log()))
 TELEMETRY_MAX_BYTES = 10 * 1024 * 1024  # 10MB rotation
 
 # ─── Lineage Registration ───────────────────────────────────────────────────

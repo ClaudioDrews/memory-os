@@ -44,12 +44,14 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
+from hermes_env import logs_dir
+
 # ─── Config ──────────────────────────────────────────────────────────────────
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "knowledge_base"
 BATCH_SIZE = 200
 SCROLL_LIMIT = 200
-LOG_FILE = Path.home() / ".hermes/logs/decay_scanner.log"
+LOG_FILE = logs_dir() / "decay_scanner.log"
 VAULT_ROOT = Path(os.environ.get("VAULT_PATH", str(Path.home() / "vault")))
 
 # ─── Heuristics ──────────────────────────────────────────────────────────────
