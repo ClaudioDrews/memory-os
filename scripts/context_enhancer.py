@@ -355,6 +355,7 @@ def search_knowledge_base(
                 "id": r.get("id", "unknown"),
                 "score": score,
                 "title": payload.get("title", "Untitled"),
+                "path": payload.get("file_path"),
                 "content_preview": _strip_prompt_injection((payload.get("text", "") or "")[:400]),
                 "source": payload.get("source", "unknown"),
                 "tags": payload.get("tags", [])
