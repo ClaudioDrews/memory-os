@@ -23,7 +23,7 @@ import requests
 import argparse
 import re
 import glob
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, NamedTuple, Optional, Tuple
 from pathlib import Path
 import time
 from datetime import datetime, timezone
@@ -42,13 +42,23 @@ QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
+EMBEDDING_API_BASE = os.environ.get(
+    "EMBEDDING_API_BASE", "https://openrouter.ai/api/v1"
+).strip().rstrip("/")
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY", "").strip()
 TOP_K_DEFAULT = 3
 SCORE_THRESHOLD_DEFAULT = 0.55
 MAX_TEXT_LEN = 8000
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = float(os.environ.get("EMBEDDING_REQUEST_TIMEOUT", "10"))
+EMBEDDING_REQUEST_RETRIES = max(
+    0, int(os.environ.get("EMBEDDING_REQUEST_RETRIES", "0"))
+)
 
 # FastEmbed BM25 config
 FASTEMBED_VENV = os.environ.get("FASTEMBED_VENV", "")
+SPARSE_QUERY_ENABLED = os.environ.get(
+    "ICARUS_SPARSE_QUERY_ENABLED", "1"
+).strip().lower() not in ("0", "false", "no", "off")
 
 # Default: use current Python if venv not configured
 _FASTEMBED_PYTHON = FASTEMBED_VENV if FASTEMBED_VENV else sys.executable
@@ -180,29 +190,84 @@ def _strip_prompt_injection(text: str) -> str:
 
 # ─── Core ───────────────────────────────────────────────────────────────────
 
+class EmbeddingQueryResult(NamedTuple):
+    """Dense embedding plus a stable failure code for caller-visible fallback."""
+
+    vector: Optional[List[float]]
+    error: Optional[str]
+
+
+def _embedding_endpoint() -> str:
+    if EMBEDDING_API_BASE.endswith("/embeddings"):
+        return EMBEDDING_API_BASE
+    return f"{EMBEDDING_API_BASE}/embeddings"
+
+
+def _embedding_headers() -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if "openrouter.ai" in EMBEDDING_API_BASE.lower():
+        if OPENROUTER_KEY:
+            headers["Authorization"] = f"Bearer {OPENROUTER_KEY}"
+            headers["HTTP-Referer"] = "https://hermes-agent.local"
+            headers["X-Title"] = "Icarus Context Enhancer"
+    elif EMBEDDING_API_KEY:
+        headers["Authorization"] = f"Bearer {EMBEDDING_API_KEY}"
+    return headers
+
+
+def embed_query_with_status(text: str) -> EmbeddingQueryResult:
+    """Generate a dense embedding through any OpenAI-compatible endpoint.
+
+    The call is deliberately synchronous: Icarus must finish retrieval before
+    Hermes sends the enriched prompt to the main LLM. Failures remain fail-open,
+    but the stable error code lets the hook make degraded retrieval visible to
+    the user instead of silently omitting semantic Wiki context.
+    """
+    if "openrouter.ai" in EMBEDDING_API_BASE.lower() and not OPENROUTER_KEY:
+        return EmbeddingQueryResult(None, "embedding_credentials_missing")
+
+    attempts = EMBEDDING_REQUEST_RETRIES + 1
+    error = "embedding_request_failed"
+    for attempt in range(attempts):
+        try:
+            resp = requests.post(
+                _embedding_endpoint(),
+                headers=_embedding_headers(),
+                json={
+                    "model": EMBEDDING_MODEL,
+                    "input": text[:MAX_TEXT_LEN],
+                },
+                timeout=REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            vector = resp.json()["data"][0]["embedding"]
+            if not isinstance(vector, list) or not vector:
+                raise ValueError("embedding response contains no vector")
+            return EmbeddingQueryResult(vector, None)
+        except requests.Timeout as exc:
+            error = "embedding_timeout"
+            print(
+                f"[CE-ERROR] Dense embedding attempt {attempt + 1}/{attempts} "
+                f"timed out: {exc}",
+                file=sys.stderr,
+            )
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
+            error = "embedding_request_failed"
+            print(
+                f"[CE-ERROR] Dense embedding attempt {attempt + 1}/{attempts} "
+                f"failed: {exc}",
+                file=sys.stderr,
+            )
+
+        if attempt + 1 < attempts:
+            time.sleep(min(0.25 * (2 ** attempt), 2.0))
+
+    return EmbeddingQueryResult(None, error)
+
+
 def embed_query(text: str) -> Optional[List[float]]:
-    """Generate dense embedding via OpenRouter qwen/qwen3-embedding-8b."""
-    if not OPENROUTER_KEY:
-        return None
-    try:
-        resp = requests.post(
-            "https://openrouter.ai/api/v1/embeddings",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": EMBEDDING_MODEL,
-                "input": text[:MAX_TEXT_LEN]
-            },
-            timeout=REQUEST_TIMEOUT
-        )
-        resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
-    except Exception as e:
-        # Fail-open: log silently, return None
-        print(f"[CE-ERROR] Embedding dense failed: {e}", file=sys.stderr)
-        return None
+    """Backward-compatible dense embedding helper."""
+    return embed_query_with_status(text).vector
 
 
 def embed_query_sparse(text: str) -> Optional[Tuple[List[int], List[float]]]:
@@ -211,6 +276,8 @@ def embed_query_sparse(text: str) -> Optional[Tuple[List[int], List[float]]]:
     Query text passes via stdin — never embedded in a -c code string.
     Fail-open: if it fails, return None. Caller falls back to dense-only.
     """
+    if not SPARSE_QUERY_ENABLED:
+        return None
     try:
         result = subprocess.run(
             [_FASTEMBED_PYTHON, "-c", """\
@@ -288,6 +355,7 @@ def search_knowledge_base(
                 "id": r.get("id", "unknown"),
                 "score": score,
                 "title": payload.get("title", "Untitled"),
+                "path": payload.get("file_path"),
                 "content_preview": _strip_prompt_injection((payload.get("text", "") or "")[:400]),
                 "source": payload.get("source", "unknown"),
                 "tags": payload.get("tags", [])

@@ -69,7 +69,9 @@ _search_qdrant(query, top_k=2, threshold=0.55):
     4. Per-session dedup by point ID
 ```
 
-**Key injection pitfall:** `context_enhancer.py` reads `OPENROUTER_API_KEY` (singular), but some environments use split keys. Before importing, inject: `os.environ["OPENROUTER_API_KEY"] = resolved_key`.
+`context_enhancer.py` uses `EMBEDDING_API_BASE`, `EMBEDDING_MODEL` and the
+optional `EMBEDDING_API_KEY` for OpenAI-compatible local or hosted providers.
+The default OpenRouter endpoint continues to use `OPENROUTER_API_KEY`.
 
 **Social closer gate:** Trivial messages ("ok", "thanks", emoji-only) skip Qdrant search entirely — no point embedding small talk.
 

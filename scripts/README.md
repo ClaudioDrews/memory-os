@@ -41,7 +41,13 @@ Standalone Python scripts that maintain the Qdrant vector database and wiki pipe
 All scripts read configuration from environment variables. See `.env.example` in the project root for the full reference.
 
 Key variables:
-- `OPENROUTER_API_KEY` — embeddings (required)
+- `EMBEDDING_API_BASE` / `EMBEDDING_MODEL` — any OpenAI-compatible embedding
+  endpoint and model. `EMBEDDING_API_KEY` is optional for authenticated custom
+  endpoints; `OPENROUTER_API_KEY` remains the legacy OpenRouter credential.
+- `EMBEDDING_REQUEST_TIMEOUT` / `EMBEDDING_REQUEST_RETRIES` — bound synchronous
+  query-time retrieval, including local model cold starts.
+- `ICARUS_SPARSE_QUERY_ENABLED=0` — skip query-time FastEmbed BM25 when it is
+  not installed; Qdrant falls back immediately to dense-only search.
 - `WIKI_PATH` — wiki root directory (default: `~/vault/wiki`)
 - `COLLECTION_NAME` — Qdrant collection (default: `knowledge_base`)
 - `EMBEDDING_DIMS` — vector dimensions (default: 4096)

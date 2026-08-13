@@ -1,9 +1,12 @@
 """Lifecycle hooks — memory capture, decision detection, creative tracking."""
 
 import json
+import importlib
+import importlib.util
 import logging
 import os
 import re
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -31,6 +34,10 @@ _ICARUS_API_KEY_ENV = os.environ.get("ICARUS_API_KEY_ENV", "").strip()
 
 _EXTRACTION_MODEL = os.environ.get("ICARUS_EXTRACTION_MODEL", "deepseek/deepseek-v4-flash")
 _EXTRACTION_MAX_TOKENS = int(os.environ.get("ICARUS_EXTRACTION_MAX_TOKENS", "1024"))
+_MEMORY_DEGRADED_WARNING = os.environ.get(
+    "ICARUS_MEMORY_DEGRADED_WARNING",
+    "⚠️ Semantic Wiki search is temporarily unavailable; this response may use incomplete context.",
+).strip()
 
 
 def _resolve_llm_endpoint() -> str:
@@ -136,6 +143,56 @@ _last_query_tokens: set = set()
 _injected_fabric: set = set()
 _injected_qdrant: set = set()
 _injected_sessions: set = set()
+
+
+def _load_context_enhancer():
+    """Load context_enhancer in both source and mounted Hermes layouts.
+
+    Upstream source checkouts expose ``scripts`` as an importable namespace
+    package. Container deployments commonly mount the single helper below the
+    Hermes data directory while the agent process runs from another cwd, so
+    that namespace is absent from ``sys.path``. Resolve that layout explicitly
+    instead of making retrieval depend on the process working directory.
+    """
+    try:
+        return importlib.import_module("scripts.context_enhancer")
+    except ModuleNotFoundError as exc:
+        if exc.name not in ("scripts", "scripts.context_enhancer"):
+            raise
+
+    candidates = []
+    configured = os.environ.get("ICARUS_CONTEXT_ENHANCER_PATH", "").strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+
+    hermes_home = getattr(state, "HERMES_HOME", None)
+    if hermes_home:
+        candidates.append(Path(hermes_home) / "scripts" / "context_enhancer.py")
+
+    candidates.append(Path(__file__).resolve().parents[1] / "scripts" / "context_enhancer.py")
+
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        module_name = "icarus_context_enhancer"
+        cached = sys.modules.get(module_name)
+        if cached is not None:
+            return cached
+        spec = importlib.util.spec_from_file_location(module_name, candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        return module
+
+    raise ModuleNotFoundError(
+        "context_enhancer.py was not found; set ICARUS_CONTEXT_ENHANCER_PATH"
+    )
 
 
 def _tokenize(text):
@@ -268,12 +325,11 @@ def _is_social_close(text):
     return False
 
 
-def _search_qdrant(query, top_k=2, threshold=0.72):
+def _search_qdrant_with_status(query, top_k=2, threshold=0.72):
     """Search Qdrant knowledge_base via context_enhancer pipeline.
 
-    Returns list of result dicts with keys: id, score, title,
-    content_preview, source, tags.
-    Returns empty list on any failure (fail-open).
+    Returns ``(results, error_code)``. Failures remain fail-open, but callers
+    receive a stable error code so degraded semantic recall is not silent.
     """
     old_api_key = os.environ.get("OPENROUTER_API_KEY")
     try:
@@ -282,27 +338,49 @@ def _search_qdrant(query, top_k=2, threshold=0.72):
         if _OPENROUTER_KEY and not old_api_key:
             os.environ["OPENROUTER_API_KEY"] = _OPENROUTER_KEY
 
-        from scripts.context_enhancer import (
-            embed_query, embed_query_sparse, search_with_fallback
-        )
-        dense = embed_query(query)
-        sparse = embed_query_sparse(query)
-        results, _level, _qdrant_ms, _fallback_ms = search_with_fallback(
-            dense_vector=dense,
+        context_enhancer = _load_context_enhancer()
+        embedding = context_enhancer.embed_query_with_status(query)
+        sparse = context_enhancer.embed_query_sparse(query)
+        results, level, _qdrant_ms, _fallback_ms = context_enhancer.search_with_fallback(
+            dense_vector=embedding.vector,
             sparse_vector=sparse,
             query_text=query,
             top_k=top_k,
             score_threshold=threshold,
         )
-        return results
+        error = embedding.error
+        if error is None and level in ("lexical", "sqlite"):
+            error = "qdrant_semantic_search_unavailable"
+        return results, error
     except Exception:
-        return []
+        logger.warning("icarus: Qdrant semantic search failed", exc_info=True)
+        return [], "semantic_search_failed"
     finally:
         # Restore original env state — never leave a mutation behind.
         if old_api_key is None:
             os.environ.pop("OPENROUTER_API_KEY", None)
         else:
             os.environ["OPENROUTER_API_KEY"] = old_api_key
+
+
+def _search_qdrant(query, top_k=2, threshold=0.72):
+    """Backward-compatible list-only Qdrant search helper."""
+    results, _error = _search_qdrant_with_status(query, top_k, threshold)
+    return results
+
+
+def _memory_warning_context(error_code):
+    """Build trusted prompt context that requires a visible user warning."""
+    warning = _MEMORY_DEGRADED_WARNING or (
+        "⚠️ Semantic Wiki search is temporarily unavailable; "
+        "this response may use incomplete context."
+    )
+    return (
+        "[memory-retrieval-warning]\n"
+        f"Dense semantic Wiki retrieval degraded ({error_code}). "
+        "Before any other response text, tell the user exactly:\n"
+        f"{warning}"
+    )
 
 
 # ── Session history search (FTS5 over state.db) ──────────────
@@ -713,8 +791,11 @@ def pre_llm_call(session_id="", user_message="", is_first_turn=False, **kwargs):
     # Threshold lowered 0.72 → 0.55: legitimate queries scored 0.57-0.63 and
     # were silently filtered out by the old 0.72 gate.
     qdrant_results = []
+    memory_warning = None
     if not is_social:
-        qdrant_results = _search_qdrant(user_message, top_k=2, threshold=0.55)
+        qdrant_results, memory_warning = _search_qdrant_with_status(
+            user_message, top_k=2, threshold=0.55
+        )
 
     # ── Session history (FTS5 over state.db) — the layer that holds
     #    "this was already built in a prior session". No automatic injection
@@ -730,7 +811,8 @@ def pre_llm_call(session_id="", user_message="", is_first_turn=False, **kwargs):
         fact_results = _search_facts(user_message, top_k=3)
 
     # ── Bail if nothing from any source ──
-    if not results and not qdrant_results and not session_results and not fact_results:
+    if (not results and not qdrant_results and not session_results
+            and not fact_results and not memory_warning):
         return None
 
     # ── Non-bijunctive collapse ──
@@ -744,6 +826,12 @@ def pre_llm_call(session_id="", user_message="", is_first_turn=False, **kwargs):
         )
 
     parts = []
+
+    # A failed dense lookup must never be invisible. This trusted instruction
+    # makes the assistant disclose the degraded Wiki/context recall before the
+    # answer while the remaining Fabric/FTS/lexical layers stay fail-open.
+    if memory_warning:
+        parts.append(_memory_warning_context(memory_warning))
 
     # Fabric context (dedup against previously injected entry ids)
     if results:
