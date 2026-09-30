@@ -34,6 +34,27 @@ Respond in JSON with keys: patterns, connections, insights, actions.
 """
 
 
+
+
+def _strip_json_fences(response: str) -> str:
+    """Strip one markdown code fence around a JSON payload.
+
+    Most current chat models wrap JSON in ```json fences even when the prompt
+    asks for raw JSON. json.loads fails on the opening backticks, the
+    JSONDecodeError branch fires, and the reflection is stored as {"raw": ...}
+    — the structured fields (patterns/connections/insights/actions) are lost
+    and the point degrades to an opaque blob (#38).
+    """
+    stripped = response.strip()
+    if stripped.startswith("```"):
+        first_newline = stripped.find("\n")
+        if first_newline != -1:
+            stripped = stripped[first_newline + 1:]
+        if stripped.rstrip().endswith("```"):
+            stripped = stripped.rstrip()[:-3]
+    return stripped
+
+
 async def reflect_on_memories(qdrant: AsyncQdrantClient) -> dict:
     """
     Runs a reflection cycle on unreflected or old memories.
@@ -74,7 +95,7 @@ async def reflect_on_memories(qdrant: AsyncQdrantClient) -> dict:
 
     try:
         response = await ollama_chat(prompt)
-        reflection_data = json.loads(response)
+        reflection_data = json.loads(_strip_json_fences(response))
     except json.JSONDecodeError:
         logger.warning("Reflection returned invalid JSON, saving raw")
         reflection_data = {"raw": response}

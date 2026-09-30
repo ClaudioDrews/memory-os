@@ -48,10 +48,20 @@ async def ollama_chat(prompt: str, model: str | None = None, timeout: int = 120)
         resp.raise_for_status()
         data = resp.json()
 
-    # DeepSeek v4 flash: reasoning can consume tokens, leaving response empty
-    # Return reasoning if content is empty
-    response = data.get("response", "")
-    if not response and "reasoning" in data:
-        response = data["reasoning"]
-    
-    return response
+    return _extract_response(data)
+
+
+def _extract_response(data: dict) -> str:
+    """Response body -> reply text.
+
+    Reasoning models can consume the whole budget on chain-of-thought, leaving
+    `response` empty. DeepSeek puts that under `reasoning`; glm-5.x-family
+    models name it `thinking` (verified on Ollama Cloud). Either is better than
+    returning nothing — the caller would otherwise fail even though the model
+    completed fine (#38).
+    """
+    return (
+        data.get("response", "")
+        or data.get("reasoning", "")
+        or data.get("thinking", "")
+    )
