@@ -29,11 +29,20 @@ def get_qdrant_client() -> AsyncQdrantClient:
 
 
 async def ensure_collection(client: AsyncQdrantClient) -> None:
-    """Ensures the hybrid collection exists with dense + sparse configs."""
+    """Ensures the hybrid collection exists with dense + sparse configs.
+
+    Uses ``collection_exists`` rather than listing collections: the logical
+    name may be satisfied by a Qdrant **alias** (e.g. ``knowledge_base`` ->
+    ``knowledge_base_v2``), which does not appear in ``get_collections``.
+    Listing collections and calling ``create_collection`` on an aliased name
+    raises a 400 (alias already exists) and crashed the worker on every
+    startup.
+    """
     try:
-        collections = (await client.get_collections()).collections
-        names = [c.name for c in collections]
-        if COLLECTION_NAME not in names:
+        exists = await client.collection_exists(COLLECTION_NAME)
+        if exists:
+            logger.info(f"Collection {COLLECTION_NAME} already exists")
+        else:
             logger.info(
                 f"Creating collection {COLLECTION_NAME} with "
                 f"dense={EMBEDDING_DIMS} dims + sparse BM25"
@@ -50,8 +59,6 @@ async def ensure_collection(client: AsyncQdrantClient) -> None:
                     "sparse": SparseVectorParams(modifier=Modifier.IDF)
                 },
             )
-        else:
-            logger.info(f"Collection {COLLECTION_NAME} already exists")
     except Exception as e:
         logger.error(f"Error validating collection: {e}")
         raise
