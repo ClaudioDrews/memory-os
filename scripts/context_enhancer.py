@@ -42,6 +42,10 @@ QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "knowledge_base")
 
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
+# Same backend settings as the worker (docker/worker/services/embedding.py),
+# so recall and ingestion embed with one model. Defaults keep OpenRouter.
+EMBEDDING_API_BASE = os.environ.get("EMBEDDING_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY") or OPENROUTER_KEY
 TOP_K_DEFAULT = 3
 SCORE_THRESHOLD_DEFAULT = 0.55
 MAX_TEXT_LEN = 8000
@@ -181,14 +185,14 @@ def _strip_prompt_injection(text: str) -> str:
 # ─── Core ───────────────────────────────────────────────────────────────────
 
 def embed_query(text: str) -> Optional[List[float]]:
-    """Generate dense embedding via OpenRouter qwen/qwen3-embedding-8b."""
-    if not OPENROUTER_KEY:
+    """Generate a dense embedding via EMBEDDING_API_BASE (default OpenRouter)."""
+    if not EMBEDDING_API_KEY:
         return None
     try:
         resp = requests.post(
-            "https://openrouter.ai/api/v1/embeddings",
+            f"{EMBEDDING_API_BASE}/embeddings",
             headers={
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
+                "Authorization": f"Bearer {EMBEDDING_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={

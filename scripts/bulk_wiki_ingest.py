@@ -31,18 +31,21 @@ QDRANT_URL = "http://localhost:6333"
 COLLECTION = "knowledge_base"
 WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", str(Path.home() / "vault" / "wiki")))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")
-EMBEDDING_DIMS = 4096
+EMBEDDING_DIMS = int(os.environ.get("EMBEDDING_DIMS", "4096"))
+# Same backend settings as the worker (docker/worker/services/embedding.py).
+EMBEDDING_API_BASE = os.environ.get("EMBEDDING_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY") or OPENROUTER_KEY
 MAX_TEXT_LEN = 8000      # truncate text for embedding (model context limit)
 BATCH_SIZE = 8           # parallel embedding requests
 RATE_LIMIT_SLEEP = 0.5   # seconds between batches
 
-if not OPENROUTER_KEY:
-    print("❌ OPENROUTER_API_KEY não encontrada no ambiente")
+if not EMBEDDING_API_KEY:
+    print("❌ EMBEDDING_API_KEY / OPENROUTER_API_KEY não encontrada no ambiente")
     sys.exit(1)
 
 print(f"📁 Wiki root: {WIKI_ROOT}")
 print(f"🎯 Coleção: {COLLECTION}")
-print(f"🔑 OpenRouter: {OPENROUTER_KEY[:20]}...")
+print(f"🔑 Embeddings: {EMBEDDING_API_BASE} ({EMBEDDING_MODEL}, {EMBEDDING_DIMS}d)")
 
 # ─── Encontrar todos os .md ────────────────────────────────────────────────
 md_files = sorted(WIKI_ROOT.rglob("*.md"))
@@ -103,9 +106,9 @@ async def get_embedding(session: aiohttp.ClientSession, text: str) -> list[float
     }
     try:
         async with session.post(
-            "https://openrouter.ai/api/v1/embeddings",
+            f"{EMBEDDING_API_BASE}/embeddings",
             headers={
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
+                "Authorization": f"Bearer {EMBEDDING_API_KEY}",
                 "Content-Type": "application/json",
             },
             json=payload,
