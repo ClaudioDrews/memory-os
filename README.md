@@ -159,6 +159,10 @@ Because almost every modern memory solution is **cloud-first**. If you want real
 
 ---
 
+## One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Memory%20OS/)
+
 ## Who this is for
 
 For people who take Hermes Agent seriously.  
